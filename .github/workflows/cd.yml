@@ -1,0 +1,125 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# J6-B — CD après fusion dans main
+#
+# Déclencheur : push sur main (merge d'une PR)
+# Jobs        :
+#   deploy — build, push ACR (tag SHA court + latest),
+#             az containerapp update frontend et backend
+#
+# Secrets GitHub requis (voir README — section CI/CD) :
+#   ACR_USERNAME     — nom d'utilisateur ACR admin (= "quizappacr")
+#   ACR_PASSWORD     — mot de passe ACR admin
+#   AZURE_CLIENT_ID  — App ID du service principal Azure
+#   AZURE_TENANT_ID  — Tenant ID Azure
+#   AZURE_SUBSCRIPTION_ID — ID de l'abonnement Azure
+# ─────────────────────────────────────────────────────────────────────────────
+name: CD — Deploy to Azure Container Apps
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    name: Build, push ACR & update Container Apps
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write  # nécessaire pour OIDC (az login --federated-token)
+
+    env:
+      ACR_SERVER: quizappacr.azurecr.io
+      RESOURCE_GROUP: quiz-app-rg
+      FRONTEND_APP: quiz-frontend
+      BACKEND_APP: quiz-backend
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Tag traçable basé sur le SHA court du commit
+      - name: Compute image tag
+        id: tag
+        run: echo "value=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
+      # ── Authentification Azure via service principal ────────────────────────
+      # OIDC (sans secret de longue durée) : nécessite AZURE_CLIENT_ID,
+      # AZURE_TENANT_ID et AZURE_SUBSCRIPTION_ID configurés comme secrets.
+      # Si OIDC n'est pas disponible sur votre abonnement étudiant, remplacez
+      # ces trois lignes par un az login --service-principal classique et
+      # ajoutez AZURE_CLIENT_SECRET à vos secrets.
+      - name: Login to Azure (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      # ── Authentification ACR ────────────────────────────────────────────────
+      - name: Login to ACR
+        run: |
+          az acr login --name quizappacr
+
+      # ── Build et push frontend ──────────────────────────────────────────────
+      - name: Build frontend image
+        run: |
+          docker build \
+            -f Dockerfile.cloud \
+            -t "$ACR_SERVER/$FRONTEND_APP:${{ steps.tag.outputs.value }}" \
+            -t "$ACR_SERVER/$FRONTEND_APP:latest" \
+            .
+
+      - name: Push frontend image
+        run: |
+          docker push "$ACR_SERVER/$FRONTEND_APP:${{ steps.tag.outputs.value }}"
+          docker push "$ACR_SERVER/$FRONTEND_APP:latest"
+
+      # ── Build et push backend ───────────────────────────────────────────────
+      - name: Build backend image
+        run: |
+          docker build \
+            -f backend/Dockerfile \
+            -t "$ACR_SERVER/$BACKEND_APP:${{ steps.tag.outputs.value }}" \
+            -t "$ACR_SERVER/$BACKEND_APP:latest" \
+            ./backend
+
+      - name: Push backend image
+        run: |
+          docker push "$ACR_SERVER/$BACKEND_APP:${{ steps.tag.outputs.value }}"
+          docker push "$ACR_SERVER/$BACKEND_APP:latest"
+
+      # ── Mise à jour des Container Apps ─────────────────────────────────────
+      - name: Update backend Container App
+        run: |
+          az containerapp update \
+            --name "$BACKEND_APP" \
+            --resource-group "$RESOURCE_GROUP" \
+            --image "$ACR_SERVER/$BACKEND_APP:${{ steps.tag.outputs.value }}"
+
+      - name: Update frontend Container App
+        run: |
+          az containerapp update \
+            --name "$FRONTEND_APP" \
+            --resource-group "$RESOURCE_GROUP" \
+            --image "$ACR_SERVER/$FRONTEND_APP:${{ steps.tag.outputs.value }}"
+
+      # ── Résumé de déploiement ───────────────────────────────────────────────
+      - name: Deployment summary
+        run: |
+          FRONTEND_FQDN=$(az containerapp show \
+            --name "$FRONTEND_APP" \
+            --resource-group "$RESOURCE_GROUP" \
+            --query "properties.configuration.ingress.fqdn" -o tsv)
+          BACKEND_FQDN=$(az containerapp show \
+            --name "$BACKEND_APP" \
+            --resource-group "$RESOURCE_GROUP" \
+            --query "properties.configuration.ingress.fqdn" -o tsv)
+
+          echo "### Déploiement terminé ✅" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Service  | URL |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|----------|-----|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Frontend | https://${FRONTEND_FQDN} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Backend  | https://${BACKEND_FQDN}/health |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Tag      | \`${{ steps.tag.outputs.value }}\` |" >> "$GITHUB_STEP_SUMMARY"
