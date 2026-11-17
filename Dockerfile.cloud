@@ -1,0 +1,50 @@
+# Dockerfile.cloud — Frontend pour déploiement Azure Container Apps
+# Utilise nginx.cloud.conf qui proxifie vers le FQDN interne du backend Container App
+# au lieu de "backend:3007" (Docker Compose uniquement).
+
+# ─────────────────────────────────────────────
+# Stage 1 — build
+# ─────────────────────────────────────────────
+FROM node:20-alpine AS build
+
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+RUN npm ci --ignore-scripts
+
+COPY index.html gestion-quiz.html vite.config.js ./
+COPY main.js style.css javascript.svg ./
+COPY public/ ./public/
+COPY images/ ./images/
+COPY questions_docker.js \
+     questions_devops.js \
+     questions_cicd.js \
+     questions_ansible.js \
+     questions_scm.js \
+     questions_usine-logicielle.js \
+     questions_defaut_0.js \
+     questions_defaut_1.js \
+     ./
+
+RUN npm run build
+
+
+# ─────────────────────────────────────────────
+# Stage 2 — prod
+# ─────────────────────────────────────────────
+FROM nginx:alpine AS prod
+
+# Config Nginx cloud (proxy vers FQDN Container Apps)
+COPY nginx/nginx.cloud.conf /etc/nginx/conf.d/default.conf
+
+COPY --from=build /app/dist /usr/share/nginx/html
+
+RUN chown -R nginx:nginx /usr/share/nginx/html \
+    && chown -R nginx:nginx /var/cache/nginx \
+    && chown -R nginx:nginx /var/log/nginx \
+    && touch /var/run/nginx.pid \
+    && chown nginx:nginx /var/run/nginx.pid
+
+EXPOSE 80
+
+CMD ["nginx", "-g", "daemon off;"]
