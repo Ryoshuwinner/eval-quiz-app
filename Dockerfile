@@ -46,6 +46,9 @@ RUN npm run build
 # ─────────────────────────────────────────────
 FROM nginx:alpine AS prod
 
+# Mise à jour de sécurité Alpine
+RUN apk update && apk upgrade --no-cache && rm -rf /var/cache/apk/*
+
 # Copie de la configuration Nginx personnalisée
 COPY nginx/nginx.conf /etc/nginx/conf.d/default.conf
 
