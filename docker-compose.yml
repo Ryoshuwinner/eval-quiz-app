@@ -1,0 +1,96 @@
+services:
+
+  # ─────────────────────────────────────────────
+  # Base de données PostgreSQL
+  # Le volume nommé "postgres_data" est géré par Docker et persiste
+  # indépendamment du cycle de vie du conteneur.
+  # init.sql est monté en lecture seule dans le répertoire d'init automatique
+  # de l'image officielle postgres : exécuté une seule fois à la création du volume.
+  # ─────────────────────────────────────────────
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER:     ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB:       ${POSTGRES_DB}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      - quiz_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # ─────────────────────────────────────────────
+  # Backend Node.js / Express
+  # Démarre uniquement une fois la DB prête (condition: service_healthy).
+  # DATABASE_URL est construite depuis les variables individuelles du .env.
+  # RESEND_API_KEY doit avoir une valeur (même fictive) pour que le serveur
+  # démarre — voir note dans backend/Dockerfile.
+  # ─────────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      RESEND_API_KEY: ${RESEND_API_KEY}
+      FROM_EMAIL:    ${FROM_EMAIL}
+      ADMIN_USERNAME: ${ADMIN_USERNAME}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      JWT_SECRET:    ${JWT_SECRET}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - quiz_net
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3007/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # ─────────────────────────────────────────────
+  # Frontend Nginx
+  # Sert le build Vite sur le port 80 du conteneur.
+  # Proxifie /api/ et /health vers le service "backend" (nginx.conf).
+  # Port hôte : 8087 (doc 08-documentation-technique).
+  # ─────────────────────────────────────────────
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "8087:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - quiz_net
+
+
+# ─────────────────────────────────────────────
+# Volume nommé — stockage PostgreSQL persistant
+# Non lié au conteneur : survit à "docker compose down",
+# supprimé uniquement avec "docker compose down -v" ou "docker volume rm".
+# ─────────────────────────────────────────────
+volumes:
+  postgres_data:
+
+
+# ─────────────────────────────────────────────
+# Réseau interne isolé
+# frontend et backend communiquent par nom de service (DNS interne Docker).
+# Aucun port de db ou backend n'est exposé à l'hôte.
+# ─────────────────────────────────────────────
+networks:
+  quiz_net:
+    driver: bridge
