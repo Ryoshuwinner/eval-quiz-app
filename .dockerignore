@@ -1,0 +1,35 @@
+# Dépendances — jamais copiées dans l'image
+node_modules/
+
+# Build Vite — généré pendant le stage build, pas depuis l'hôte
+dist/
+
+# Variables d'environnement réelles
+.env
+.env.*
+!.env.example
+
+# Git
+.git/
+.gitignore
+
+# Logs
+*.log
+npm-debug.log*
+
+# Éditeurs et OS
+.DS_Store
+.vscode/
+.idea/
+
+# Documentation et preuves (inutiles dans l'image)
+docs/
+preuves/
+README.md
+
+# Fichiers de CI/CD
+.github/
+.gitlab-ci.yml
+
+# Scripts de déploiement
+scripts/

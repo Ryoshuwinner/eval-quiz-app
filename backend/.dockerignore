@@ -1,0 +1,19 @@
+# Dépendances — installées dans le stage build, pas copiées depuis l'hôte
+node_modules/
+
+# Variables d'environnement réelles
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+npm-debug.log*
+
+# Éditeurs et OS
+.DS_Store
+.vscode/
+.idea/
+
+# Dockerfile lui-même (inutile dans l'image)
+Dockerfile
