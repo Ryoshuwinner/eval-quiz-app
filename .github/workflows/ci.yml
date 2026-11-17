@@ -1,0 +1,74 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# J6-A — CI sur Pull Request
+#
+# Déclencheur : toute PR ciblant main
+# Jobs        :
+#   build-frontend — build Dockerfile.cloud, scan Trivy CRITICAL bloquant
+#   build-backend  — build backend/Dockerfile, scan Trivy CRITICAL bloquant
+#
+# Les deux jobs doivent passer pour que la PR soit fusionnable.
+# Les images restent locales (pas de push ACR en CI).
+# ─────────────────────────────────────────────────────────────────────────────
+name: CI — Build & Trivy scan (PR)
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  # ───────────────────────────────────────────────────────────────────────────
+  build-frontend:
+    name: Build frontend + Trivy scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build frontend image (Dockerfile.cloud)
+        run: |
+          docker build \
+            -f Dockerfile.cloud \
+            -t quiz-frontend:ci \
+            .
+
+      - name: Scan Trivy — CRITICAL bloquant
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: quiz-frontend:ci
+          format: table
+          exit-code: '1'
+          ignore-unfixed: true
+          vuln-type: os,library
+          severity: CRITICAL
+
+  # ───────────────────────────────────────────────────────────────────────────
+  build-backend:
+    name: Build backend + Trivy scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build backend image (backend/Dockerfile)
+        run: |
+          docker build \
+            -f backend/Dockerfile \
+            -t quiz-backend:ci \
+            ./backend
+
+      - name: Scan Trivy — CRITICAL bloquant
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: quiz-backend:ci
+          format: table
+          exit-code: '1'
+          ignore-unfixed: true
+          vuln-type: os,library
+          severity: CRITICAL
