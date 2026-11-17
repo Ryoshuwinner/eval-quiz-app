@@ -6,15 +6,12 @@ FROM node:20-alpine AS build
 
 WORKDIR /app
 
-# Copie du manifeste en premier pour profiter du cache de couches.
-# Note : package-lock.json n'est pas présent dans le dépôt initial ;
-# npm install le génère. Une fois committé, remplacer npm install par npm ci
-# pour des builds strictement reproductibles.
-COPY package.json ./
+# Copie des manifestes en premier pour profiter du cache de couches
+COPY package.json package-lock.json ./
 
 # --omit=dev : exclut devDependencies
 # --ignore-scripts : empêche l'exécution de scripts postinstall arbitraires
-RUN npm install --omit=dev --ignore-scripts
+RUN npm ci --omit=dev --ignore-scripts
 
 
 # ─────────────────────────────────────────────
