@@ -19,6 +19,16 @@ RUN npm ci --omit=dev --ignore-scripts
 # Image finale allégée, sans npm ni cache
 # ─────────────────────────────────────────────
 FROM node:20-alpine AS prod
+# 1. Mise à jour des paquets système Alpine (corrige libcrypto3, libssl3, musl, zlib)
+# 2. Suppression de npm, corepack et yarn inutiles au runtime (élimine la CRITICAL sur tar et les 38 CVE npm)
+RUN apk update && apk upgrade --no-cache && \
+    rm -rf /usr/local/lib/node_modules/npm \
+           /usr/local/lib/node_modules/corepack \
+           /usr/local/bin/npm \
+           /usr/local/bin/npx \
+           /usr/local/bin/corepack \
+           /opt/yarn* \
+           /var/cache/apk/*
 
 # Création d'un utilisateur non-root sans shell de login ni répertoire home superflu
 # UID/GID 1001 explicites pour être résolvables par le système hôte
