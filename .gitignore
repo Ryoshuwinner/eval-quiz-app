@@ -162,3 +162,6 @@ vite.config.ts.timestamp-*
 node_modules/
 dist/
 *.log
+
+# Notes locales
+notes.md
