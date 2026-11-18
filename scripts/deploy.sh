@@ -121,6 +121,24 @@ else
 fi
 echo "  OK : $BACKEND_APP"
 
+# Attendre que le backend soit joignable avant de démarrer le frontend
+# (évite le crash Nginx "host not found in upstream" au démarrage)
+echo "  Attente du backend..."
+BACKEND_URL=$(az containerapp show \
+  --name "$BACKEND_APP" \
+  --resource-group "$RESOURCE_GROUP" \
+  --query "properties.configuration.ingress.fqdn" -o tsv)
+
+for i in $(seq 1 24); do
+  STATUS=$(curl -s -o /dev/null -w "%{http_code}" "https://${BACKEND_URL}/health" 2>/dev/null || echo "000")
+  if [[ "$STATUS" == "200" ]]; then
+    echo "  Backend prêt (HTTP 200) après $((i * 5))s"
+    break
+  fi
+  echo "  Tentative $i/24 — HTTP $STATUS, nouvelle tentative dans 5s..."
+  sleep 5
+done
+
 # Frontend
 if az containerapp show --name "$FRONTEND_APP" --resource-group "$RESOURCE_GROUP" &>/dev/null; then
   az containerapp update \
