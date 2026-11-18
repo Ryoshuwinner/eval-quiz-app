@@ -36,8 +36,9 @@ FROM nginx:alpine AS prod
 
 # Mise à jour de sécurité Alpine (corrige les CVE sur libxslt)
 RUN apk update && apk upgrade --no-cache && rm -rf /var/cache/apk/*
-# Config Nginx cloud (proxy vers FQDN Container Apps)
-COPY nginx/nginx.cloud.conf /etc/nginx/conf.d/default.conf
+# Config Nginx cloud — placée dans /etc/nginx/templates/ pour que
+# envsubst remplace ${BACKEND_FQDN} au démarrage du conteneur
+COPY nginx/nginx.cloud.conf /etc/nginx/templates/default.conf.template
 
 COPY --from=build /app/dist /usr/share/nginx/html
 

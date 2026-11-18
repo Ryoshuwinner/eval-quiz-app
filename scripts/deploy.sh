@@ -14,6 +14,14 @@
 
 set -euo pipefail
 
+# ─── Chargement de .env ───────────────────────────────────────────────────────
+if [[ -f .env ]]; then
+  set -a
+  # shellcheck disable=SC1091
+  source .env
+  set +a
+fi
+
 # ─── Configuration ────────────────────────────────────────────────────────────
 RESOURCE_GROUP="quiz-app-rg"
 LOCATION="norwayeast"
@@ -121,12 +129,40 @@ else
 fi
 echo "  OK : $BACKEND_APP"
 
+# Attendre que le backend soit joignable avant de démarrer le frontend
+# (évite le crash Nginx "host not found in upstream" au démarrage)
+echo "  Attente du backend..."
+BACKEND_URL=$(az containerapp show \
+  --name "$BACKEND_APP" \
+  --resource-group "$RESOURCE_GROUP" \
+  --query "properties.configuration.ingress.fqdn" -o tsv)
+
+# Mettre à jour BACKEND_FQDN dans .env avec le FQDN réel du backend
+if [[ -f .env ]]; then
+  if grep -q "^BACKEND_FQDN=" .env; then
+    sed -i "s|^BACKEND_FQDN=.*|BACKEND_FQDN=${BACKEND_URL}|" .env
+  else
+    echo "BACKEND_FQDN=${BACKEND_URL}" >> .env
+  fi
+fi
+
+for i in $(seq 1 24); do
+  STATUS=$(curl -s -o /dev/null -w "%{http_code}" "https://${BACKEND_URL}/health" 2>/dev/null || echo "000")
+  if [[ "$STATUS" == "200" ]]; then
+    echo "  Backend prêt (HTTP 200) après $((i * 5))s"
+    break
+  fi
+  echo "  Tentative $i/24 — HTTP $STATUS, nouvelle tentative dans 5s..."
+  sleep 5
+done
+
 # Frontend
 if az containerapp show --name "$FRONTEND_APP" --resource-group "$RESOURCE_GROUP" &>/dev/null; then
   az containerapp update \
     --name "$FRONTEND_APP" \
     --resource-group "$RESOURCE_GROUP" \
     --image "${ACR_SERVER}/${FRONTEND_APP}:${TAG}" \
+    --set-env-vars "BACKEND_FQDN=${BACKEND_URL}" \
     --output none
 else
   az containerapp create \
@@ -143,6 +179,7 @@ else
     --max-replicas 2 \
     --cpu 0.25 \
     --memory 0.5Gi \
+    --env-vars "BACKEND_FQDN=${BACKEND_URL}" \
     --output none
 fi
 echo "  OK : $FRONTEND_APP"
