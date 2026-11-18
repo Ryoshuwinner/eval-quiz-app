@@ -26,7 +26,7 @@ FRONTEND_APP="quiz-frontend"
 # Tag : commit Git court ou valeur passée en argument
 GIT_TAG=$(git rev-parse --short HEAD 2>/dev/null || echo "latest")
 TAG="${1:-${GIT_TAG}}"
-if [[ "$1" == "--tag" && -n "${2:-}" ]]; then TAG="$2"; fi
+if [[ "${1:-}" == "--tag" && -n "${2:-}" ]]; then TAG="$2"; fi
 
 echo "=== Déploiement Quiz App — tag: ${TAG} ==="
 
