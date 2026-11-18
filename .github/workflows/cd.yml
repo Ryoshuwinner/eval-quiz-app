@@ -6,12 +6,11 @@
 #   deploy — build, push ACR (tag SHA court + latest),
 #             az containerapp update frontend et backend
 #
-# Secrets GitHub requis (voir README — section CI/CD) :
-#   ACR_USERNAME     — nom d'utilisateur ACR admin (= "quizappacr")
-#   ACR_PASSWORD     — mot de passe ACR admin
-#   AZURE_CLIENT_ID  — App ID du service principal Azure
-#   AZURE_TENANT_ID  — Tenant ID Azure
-#   AZURE_SUBSCRIPTION_ID — ID de l'abonnement Azure
+# Secrets GitHub requis :
+#   ACR_USERNAME   — nom d'utilisateur ACR admin (= "quizappacr")
+#   ACR_PASSWORD   — mot de passe ACR admin
+#   AZURE_USERNAME — email du compte Azure
+#   AZURE_PASSWORD — mot de passe du compte Azure
 # ─────────────────────────────────────────────────────────────────────────────
 name: CD — Deploy to Azure Container Apps
 
@@ -26,7 +25,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write  # nécessaire pour OIDC (az login --federated-token)
 
     env:
       ACR_SERVER: quizappacr.azurecr.io
@@ -43,23 +41,18 @@ jobs:
         id: tag
         run: echo "value=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
 
-      # ── Authentification Azure via service principal ────────────────────────
-      # OIDC (sans secret de longue durée) : nécessite AZURE_CLIENT_ID,
-      # AZURE_TENANT_ID et AZURE_SUBSCRIPTION_ID configurés comme secrets.
-      # Si OIDC n'est pas disponible sur votre abonnement étudiant, remplacez
-      # ces trois lignes par un az login --service-principal classique et
-      # ajoutez AZURE_CLIENT_SECRET à vos secrets.
-      - name: Login to Azure (OIDC)
-        uses: azure/login@v2
-        with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      # ── Authentification Azure ──────────────────────────────────────────────
+      - name: Login to Azure
+        run: |
+          az login --username "${{ secrets.AZURE_USERNAME }}" \
+                   --password "${{ secrets.AZURE_PASSWORD }}"
 
       # ── Authentification ACR ────────────────────────────────────────────────
       - name: Login to ACR
         run: |
-          az acr login --name quizappacr
+          docker login "$ACR_SERVER" \
+            --username "${{ secrets.ACR_USERNAME }}" \
+            --password "${{ secrets.ACR_PASSWORD }}"
 
       # ── Build et push frontend ──────────────────────────────────────────────
       - name: Build frontend image
